@@ -114,13 +114,25 @@ def min_refresh_period_s() -> float:
     return 1.0 / max_refresh_rate_hz()
 
 
-def build_set_data_rate_command(rate_hz: int, unit: int = 1) -> bytes:
-    """The ``[nDxxx<cr>`` command bytes to set the output data rate, for `unit` (1-9)."""
+def _validate_unit(unit: int) -> None:
+    """Raise MessageFormatError unless `unit` is a valid device unit number (1-9)."""
     if not 1 <= unit <= 9:
         raise MessageFormatError(f"unit number out of range (1-9): {unit}")
+
+
+def build_set_data_rate_command(rate_hz: int, unit: int = 1) -> bytes:
+    """The ``[nDxxx<cr>`` command bytes to set the output data rate, for `unit` (1-9)."""
+    _validate_unit(unit)
     if rate_hz not in DATA_RATES_HZ:
         raise UnsupportedDataRateError(f"{rate_hz} Hz is not one of {DATA_RATES_HZ}")
     return f"[{unit}D{rate_hz}\r".encode("ascii")
+
+
+def build_set_gyro_output_command(enabled: bool, unit: int = 1) -> bytes:
+    """The ``[nGx<cr>`` command bytes to enable/disable gyroscope output, for `unit` (1-9)."""
+    _validate_unit(unit)
+    flag = 1 if enabled else 0
+    return f"[{unit}G{flag}\r".encode("ascii")
 
 
 def parse_set_data_rate_response(line: str) -> int:
@@ -134,3 +146,17 @@ def parse_set_data_rate_response(line: str) -> int:
         return int(value)
     except ValueError as exc:
         raise MessageFormatError(f"non-numeric data rate in: {line!r}") from exc
+
+
+def parse_gyro_output_response(line: str) -> bool:
+    """The confirmed gyro output state from a ``>Gyro Output: On``/``Off`` response."""
+    stripped = line.strip()
+    prefix = ">Gyro Output:"
+    if not stripped.startswith(prefix):
+        raise MessageFormatError(f"not a gyro output confirmation: {line!r}")
+    value = stripped[len(prefix) :].strip().lower()
+    if value == "on":
+        return True
+    if value == "off":
+        return False
+    raise MessageFormatError(f"non boolean gyro output state in: {line!r}")

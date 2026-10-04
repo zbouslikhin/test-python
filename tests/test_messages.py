@@ -5,9 +5,11 @@ from tilt55a.messages import (
     MessageFormatError,
     UnsupportedDataRateError,
     build_set_data_rate_command,
+    build_set_gyro_output_command,
     compute_checksum,
     max_refresh_rate_hz,
     min_refresh_period_s,
+    parse_gyro_output_response,
     parse_inclinometer_message,
     parse_sensor_message,
     parse_set_data_rate_response,
@@ -91,3 +93,34 @@ def test_parse_set_data_rate_response_reads_the_confirmed_rate() -> None:
 def test_parse_set_data_rate_response_rejects_an_unrelated_line() -> None:
     with pytest.raises(MessageFormatError):
         parse_set_data_rate_response(">Firmware Version:1.19")
+
+
+def test_build_set_gyro_output_command_formats_the_enable_command() -> None:
+    assert build_set_gyro_output_command(True, unit=1) == b"[1G1\r"
+
+
+def test_build_set_gyro_output_command_formats_the_disable_command() -> None:
+    assert build_set_gyro_output_command(False, unit=1) == b"[1G0\r"
+
+
+def test_build_set_gyro_output_command_rejects_an_out_of_range_unit() -> None:
+    with pytest.raises(MessageFormatError):
+        build_set_gyro_output_command(True, unit=10)
+
+
+def test_parse_gyro_output_response_reads_the_enabled_state() -> None:
+    assert parse_gyro_output_response(">Gyro Output: On\r\n") is True
+
+
+def test_parse_gyro_output_response_reads_the_disabled_state() -> None:
+    assert parse_gyro_output_response(">Gyro Output: Off\r\n") is False
+
+
+def test_parse_gyro_output_response_rejects_an_unrelated_line() -> None:
+    with pytest.raises(MessageFormatError):
+        parse_gyro_output_response(">Firmware Version:1.19")
+
+
+def test_parse_gyro_output_response_rejects_a_non_boolean_state() -> None:
+    with pytest.raises(MessageFormatError):
+        parse_gyro_output_response(">Gyro Output: Maybe")
