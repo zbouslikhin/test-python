@@ -58,3 +58,23 @@ def test_run_at_max_refresh_rate_drives_the_device_to_400_hz() -> None:
 
     assert transport.written == [b"[1D400\r"]
     assert confirmed == 400
+
+
+def test_set_gyro_output_enables_gyro_data() -> None:
+    transport = FakeTransport([b">Gyro Output: On\r\n"])
+    client = TiltClient(transport, unit=1)
+
+    enabled = client.set_gyro_output(True)
+
+    assert transport.written == [b"[1G1\r"]
+    assert enabled is True
+
+
+def test_set_gyro_output_disables_gyro_data() -> None:
+    transport = FakeTransport([b">Gyro Output: Off\r\n"])
+    client = TiltClient(transport, unit=1)
+
+    enabled = client.set_gyro_output(False)
+
+    assert transport.written == [b"[1G0\r"]
+    assert enabled is False
