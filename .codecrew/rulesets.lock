@@ -1,0 +1,14 @@
+# Written by codecrew: what is installed, with a hash per file. Don't edit by hand.
+lock_version: 1
+rulesets:
+- source: https://github.com/zbouslikhin/codecrew-rulesets.git
+  name: python-service
+  version: v1.4.0
+  commit: 77736f8ab0ab24d2031a82d43d9add2a435e27ca
+  path: .
+  files:
+    .codecrew/rulesets/python-service/ruleset.yaml: 1869a4be02235684ae899e908b78b0bf959abb6832fbf88d68f5fd89997afc7d
+    .codecrew/.gitattributes: 87ee22d0bb7e4a881f62a1dd5be36f59da2c79a5c14a1f89f695f0294dfb9ca5
+    mypy.ini: 30cae00d205d993e0a22e4dac3452d57345bd096f018267cdfe6707d7f3719f3
+    ruff.toml: 951f08e487f8e2d8df1eee5f2a27b8ca93904ada12afcd8f8c72eedd0ff7e59f
+    .codecrew/rulesets/python-service/skills/module-pattern/SKILL.md: 55dd79c1dc56ae14e3fe2bd65c79c91a4bb456b798647c2520ac64f109010c87

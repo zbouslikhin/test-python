@@ -1,0 +1,173 @@
+name: python-service
+# Pin by digest on release (docker buildx imagetools inspect <image>): a tag can move.
+toolchain: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+summary: |
+  Python 3.12 service, managed with uv, in the src layout:
+  - Code lives in src/<package>/ (snake_case), every package has an __init__.py.
+  - Tests live in tests/ as test_*.py and use pytest; every behaviour you add needs a test.
+  - Type hints everywhere; mypy runs in strict mode. No bare `except:`; no mutable defaults.
+  - Formatting (ruff format) is applied for you; lint problems ruff can fix are fixed too.
+
+# The project gets its tools the ecosystem's own way: uv writes them into
+# pyproject.toml [dependency-groups] dev, and uv.lock pins them.
+install:
+  - uv add --dev --quiet "ruff>=0.9" "mypy>=1.13" "pytest>=8.3" "vulture>=2.14"
+
+setup:
+  - "if [ -f uv.lock ]; then uv sync --frozen --quiet || uv sync --quiet; else uv sync --quiet; fi"
+
+ignore: [.venv/, .git/, __pycache__/, .mypy_cache/, .pytest_cache/, .ruff_cache/, dist/, build/]
+
+structure:
+  - path: "src/*/"
+    name: snake_case
+    require: [__init__.py]
+    message: "Packages live in src/<package>/ with an __init__.py, named in snake_case."
+  - path: "tests/"
+    allow: ["test_*.py", "conftest.py", "__init__.py", "*/"]
+    message: "tests/ holds pytest files named test_*.py (plus conftest.py)."
+
+checks:
+  - id: format
+    fix: true
+    run: .venv/bin/ruff format --quiet {files:*.py,*.pyi}
+    description: ruff format, applied automatically
+  - id: lint
+    fix: true
+    run: .venv/bin/ruff check --fix --quiet --output-format sarif {files:*.py,*.pyi}
+    parser: sarif
+    description: ruff (pyflakes, pycodestyle, bugbear, imports, pyupgrade); fixable problems are fixed
+  - id: types
+    run: .venv/bin/mypy --output json src tests
+    # mypy writes one JSON object per line
+    parser:
+      format: jsonl
+      fields: { file: file, line: line, column: column, message: message, code: code, severity: severity }
+      severity_map: { note: info }
+    description: mypy --strict
+  - id: test
+    run: .venv/bin/pytest -q -rfE -p no:cacheprovider
+    timeout: 600
+    # the short summary: "FAILED tests/test_x.py::test_y - AssertionError: ..." or "ERROR tests/test_x.py"
+    parser:
+      format: lines
+      pattern: '^(?P<severity>FAILED|ERROR) (?P<file>[^:\s]+)(?:::(?P<code>\S+))?(?: - (?P<message>.*))?$'
+      code: test-file-error
+      severity_map: { FAILED: error, ERROR: error }
+    description: pytest
+  - id: unused
+    run: .venv/bin/vulture src tests --min-confidence 80
+    # vulture has false positives: its findings are shown, not enforced
+    parser:
+      format: lines
+      pattern: '^(?P<file>[^:]+):(?P<line>\d+): (?P<message>.+)$'
+      code: unused-code
+      severity: warning
+    description: vulture (unused code), as warnings
+
+# Permission rules for every agent working under this ruleset, on top of codecrew's defaults
+# (no .env files, SSH keys or codecrew data; no curl, wget, sudo). Order: deny, ask, allow;
+# the first match wins. allow lists what this stack needs: an agent set to run only allowed
+# commands ("unlisted commands: deny") still gets these. Proven by fixtures/permissions.yaml.
+permissions:
+  deny:
+    - run_command(uv publish*)       # releasing is yours
+    - run_command(twine *)
+    - run_command(git push*)         # codecrew publishes approved runs
+    - run_command(git commit*)       # codecrew commits when the checks pass
+  ask:
+    - run_command(uv add *)          # a new dependency
+    - run_command(uv remove *)
+    - run_command(uv pip install *)
+    - run_command(pip install *)
+    - write(pyproject.toml)
+  allow:
+    - run_command(uv sync*)
+    - run_command(uv run *)
+    - run_command(.venv/bin/*)
+    - run_command(python *)
+    - run_command(git status*)
+    - run_command(git diff*)
+    - run_command(git log*)
+
+# Plan mode: what a plan for this stack adds to codecrew's common core, and the checks on it.
+# Proven by fixtures/plans/ (codecrew ruleset test).
+plan:
+  sections:
+    - key: modules
+      title: Modules
+      description: >-
+        Every Python module (a file under src/) you will add, change or delete, with what it's
+        for. change is add, modify or delete. (Files listed here needn't be repeated in the steps.)
+      columns: [path, change, purpose]
+      path_column: path
+    - key: tests
+      title: Tests
+      description: >-
+        The test files (tests/test_*.py) you add or extend, and the behaviour each covers.
+      columns: [path, covers]
+      path_column: path
+    - key: interface_changes
+      title: Interface changes
+      description: >-
+        Changes to what callers rely on: public functions and classes (signature, return type,
+        exceptions), the command line, configuration, data formats. Empty when there are none.
+      columns: [what, change, affects]
+      required: false
+      risk: true   # 'ask on risk' asks you before an interface changes
+  checks:
+    - id: module-has-test
+      kind: paired
+      section: modules
+      column: path
+      where: { change: add }
+      skip: '(^|/)(__init__|__main__)\.py$'
+      with_section: tests
+      with_column: path
+      template: "tests/**/test_{stem}.py"
+      message: "New module '{value}' has no planned test: add tests/test_{stem}.py to tests."
+    - id: module-change
+      kind: pattern
+      section: modules
+      column: change
+      require: '^(add|modify|delete)$'
+      message: "modules: '{path}' has change '{value}'; it must be add, modify or delete."
+    - id: modules-fit-structure
+      kind: structure
+      section: modules
+      column: path
+      where: { change: add }
+    - id: tests-fit-structure
+      kind: structure
+      section: tests
+      column: path
+
+agents:
+  - key: developer
+    label: Python developer
+    instructions: >-
+      You are a senior Python developer. Study the existing packages first and follow their
+      structure. Type-hint everything (mypy runs strict), keep functions small, raise specific
+      exceptions, never use a bare except or a mutable default. Every behaviour you add gets a
+      pytest test in tests/.
+    tools: [read_file, write_file, edit_file, delete_file, list_dir, search, run_command]
+    write_scope: ["src/**", "tests/**"]
+    max_turns: 40
+    plan_mode: auto   # plans first; the plan checks decide (change it on the agent's page)
+  - key: tester
+    label: Python tester
+    instructions: >-
+      You write pytest tests for what the earlier stages built: the main path and the edge cases
+      the request implies, with plain asserts and parametrize for tables of cases. Change only
+      files in tests/ unless a test reveals a real bug.
+    tools: [read_file, write_file, edit_file, list_dir, search, run_command]
+    write_scope: ["tests/**"]
+    max_turns: 30
+
+# The repo map agents get up front: which functions and classes each file defines
+# (top level only), so they don't open files just to find their way.
+repo_map:
+  symbols:
+    - files: "*.py"
+      pattern: '^(?:async\s+)?(?:def|class)\s+(?P<name>\w+)'
+

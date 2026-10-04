@@ -1,0 +1,6 @@
+# Rulesets this repository uses. Change versions with: codecrew ruleset update
+rulesets:
+- source: https://github.com/zbouslikhin/codecrew-rulesets.git
+  name: python-service
+  version: v1.4.0
+  path: .
